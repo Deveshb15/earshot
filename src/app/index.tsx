@@ -1,98 +1,112 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Dimensions, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
+import EarshotAudio from '../../modules/earshot-audio';
+import { ArmButton } from '@/components/arm-button';
+import { RecordingIndicator } from '@/components/recording-indicator';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Waveform } from '@/components/waveform';
+import { Spacing } from '@/constants/theme';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const WAVEFORM_WIDTH = SCREEN_WIDTH - Spacing.four * 2;
+const WAVEFORM_HEIGHT = 60;
 
 export default function HomeScreen() {
+  const [armed, setArmed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastReason, setLastReason] = useState<'user' | 'route_lost' | null>(null);
+  const [level, setLevel] = useState(0);
+
+  useEffect(() => {
+    const stateSub = EarshotAudio.addListener('onStateChange', (e) => {
+      setArmed(e.armed);
+      setLastReason(e.reason ?? null);
+      if (!e.armed) setLevel(0);
+    });
+    const levelSub = EarshotAudio.addListener('onAudioLevel', (e) => {
+      setLevel(e.level);
+    });
+    return () => {
+      stateSub.remove();
+      levelSub.remove();
+    };
+  }, []);
+
+  const toggle = async () => {
+    setError(null);
+    try {
+      if (armed) {
+        await EarshotAudio.disarm();
+      } else {
+        await EarshotAudio.arm();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const statusLine = armed
+    ? 'listening — drop the phone, walk away'
+    : lastReason === 'route_lost'
+      ? 'stopped — AirPods disconnected'
+      : 'tap arm to start';
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
+        <View style={styles.topRow}>
+          <RecordingIndicator visible={armed} />
+        </View>
+
+        <View style={styles.center}>
+          <ArmButton armed={armed} disabled={Platform.OS !== 'ios'} onPress={toggle} />
+          <ThemedText type="code" style={styles.status}>
+            {statusLine}
           </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+          <Waveform
+            level={level}
+            visible={armed}
+            width={WAVEFORM_WIDTH}
+            height={WAVEFORM_HEIGHT}
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+        </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
+        {error && (
+          <ThemedView type="backgroundElement" style={styles.errorBox}>
+            <ThemedText type="small">{error}</ThemedText>
+          </ThemedView>
+        )}
       </SafeAreaView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  container: { flex: 1 },
+  safeArea: { flex: 1, paddingHorizontal: Spacing.four },
+  topRow: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingVertical: Spacing.three,
   },
-  safeArea: {
+  center: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
     gap: Spacing.four,
   },
-  title: {
+  status: {
     textAlign: 'center',
-  },
-  code: {
     textTransform: 'uppercase',
+    opacity: 0.6,
+    letterSpacing: 2,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  errorBox: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    marginBottom: Spacing.four,
   },
 });

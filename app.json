@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "earshot",
+    "name": "Earshot",
     "slug": "earshot",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,23 @@
     "scheme": "earshot",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "supportsTablet": false,
+      "bundleIdentifier": "com.devesh.earshot",
+      "deploymentTarget": "18.0",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSMicrophoneUsageDescription": "Earshot uses your microphone to amplify the room's sound and stream it to your AirPods or hearing aids, so you can hear from another room.",
+        "NSBluetoothAlwaysUsageDescription": "Earshot uses Bluetooth to detect when your AirPods or hearing aids are connected so audio can be routed to them."
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.devesh.earshot"
+        ]
+      },
+      "appleTeamId": "728M4WMSGG"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +33,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.devesh.earshot"
     },
     "web": {
       "output": "static",
@@ -28,7 +45,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#000000",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
