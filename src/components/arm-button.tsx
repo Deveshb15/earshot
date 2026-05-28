@@ -1,14 +1,18 @@
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { Canvas, Circle, RadialGradient, vec } from '@shopify/react-native-skia';
+import * as Haptics from 'expo-haptics';
+import { SymbolView } from 'expo-symbols';
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
-  Easing,
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
+
+import { Earshot, Motion } from '@/constants/earshot-tokens';
 
 type Props = {
   armed: boolean;
@@ -16,66 +20,127 @@ type Props = {
   onPress: () => void;
 };
 
-const SIZE = 240;
-const TINT_IDLE = '#1A1A1A';
-const TINT_ARMED = '#0066FF';
+const SIZE = 280;
+const CENTER = SIZE / 2;
 
+/**
+ * The single hero action. Idle: matte dark disc. Armed: electric-blue → cyan
+ * radial gradient, slow organic breathing scale. Press: snappy spring-down to
+ * 0.94 with haptic. Skia handles the gradient; Reanimated handles motion.
+ */
 export function ArmButton({ armed, disabled, onPress }: Props) {
-  const scale = useSharedValue(1);
-  const liquidGlass = isLiquidGlassAvailable();
+  const breathScale = useSharedValue(1);
+  const pressScale = useSharedValue(1);
+  const armedOpacity = useSharedValue(0);
+  const symbolOpacity = useSharedValue(0.55);
 
   useEffect(() => {
-    cancelAnimation(scale);
+    cancelAnimation(breathScale);
     if (armed) {
-      scale.value = withRepeat(
-        withTiming(1.04, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
+      armedOpacity.value = withTiming(1, { duration: 600 });
+      symbolOpacity.value = withTiming(1, { duration: 400 });
+      breathScale.value = withRepeat(
+        withSpring(1.04, Motion.springBreathing),
         -1,
         true,
       );
     } else {
-      scale.value = withTiming(1, { duration: 200 });
+      armedOpacity.value = withTiming(0, { duration: 600 });
+      symbolOpacity.value = withTiming(0.55, { duration: 400 });
+      breathScale.value = withSpring(1, Motion.springBreathing);
     }
-  }, [armed, scale]);
+  }, [armed, breathScale, armedOpacity, symbolOpacity]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+  const handlePressIn = () => {
+    pressScale.value = withSpring(0.94, Motion.springSnappy);
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const handlePressOut = () => {
+    pressScale.value = withSpring(1, Motion.springSnappy);
+  };
+
+  const containerStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: breathScale.value * pressScale.value }],
   }));
 
-  const tint = armed ? TINT_ARMED : TINT_IDLE;
+  const armedOverlayStyle = useAnimatedStyle(() => ({
+    opacity: armedOpacity.value,
+  }));
+
+  const symbolStyle = useAnimatedStyle(() => ({
+    opacity: symbolOpacity.value,
+  }));
 
   return (
-    <Pressable onPress={onPress} disabled={disabled}>
-      <Animated.View style={[styles.outer, { backgroundColor: tint }, animatedStyle]}>
-        {liquidGlass && (
-          <GlassView style={styles.glass} glassEffectStyle="regular" tintColor={tint} />
-        )}
-        <Text style={styles.label}>{armed ? 'DISARM' : 'ARM'}</Text>
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}>
+      <Animated.View style={[styles.container, containerStyle]}>
+        {/* Idle base — flat matte dark */}
+        <Canvas style={styles.canvas}>
+          <Circle cx={CENTER} cy={CENTER} r={CENTER} color={Earshot.buttonIdle} />
+        </Canvas>
+
+        {/* Armed overlay — electric blue → cyan radial */}
+        <Animated.View style={[styles.canvas, armedOverlayStyle]}>
+          <Canvas style={styles.canvas}>
+            <Circle cx={CENTER} cy={CENTER} r={CENTER}>
+              <RadialGradient
+                c={vec(CENTER, CENTER)}
+                r={CENTER}
+                colors={[Earshot.buttonArmedCenter, Earshot.buttonArmedEdge]}
+              />
+            </Circle>
+          </Canvas>
+        </Animated.View>
+
+        {/* SF Symbol — same glyph in both states, opacity differentiates */}
+        <Animated.View style={[styles.symbolWrap, symbolStyle]} pointerEvents="none">
+          <SymbolView
+            name="waveform"
+            size={88}
+            tintColor={Earshot.text}
+            type="monochrome"
+          />
+        </Animated.View>
+
+        {/* Subtle inner stroke for depth */}
+        <View style={styles.innerStroke} pointerEvents="none" />
       </Animated.View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  outer: {
+  container: {
+    width: SIZE,
+    height: SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  canvas: {
+    position: 'absolute',
+    width: SIZE,
+    height: SIZE,
+  },
+  symbolWrap: {
+    position: 'absolute',
+    width: SIZE,
+    height: SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  innerStroke: {
+    position: 'absolute',
     width: SIZE,
     height: SIZE,
     borderRadius: SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  glass: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    borderRadius: SIZE / 2,
-  },
-  label: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
 });

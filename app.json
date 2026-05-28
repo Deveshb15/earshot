@@ -51,7 +51,8 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "expo-live-activity"
     ],
     "experiments": {
       "typedRoutes": true,

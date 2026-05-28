@@ -1,73 +1,85 @@
 import { useEffect, useState } from 'react';
-import { Dimensions, Platform, StyleSheet, View } from 'react-native';
+import { Dimensions, Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import EarshotAudio from '../../modules/earshot-audio';
 import { ArmButton } from '@/components/arm-button';
+import { OutputPill } from '@/components/output-pill';
 import { RecordingIndicator } from '@/components/recording-indicator';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { SonarRings } from '@/components/sonar-rings';
+import { StatusLine, type StatusKind } from '@/components/status-line';
 import { Waveform } from '@/components/waveform';
-import { Spacing } from '@/constants/theme';
+import { Earshot } from '@/constants/earshot-tokens';
+import { useEarshotLiveActivity } from '@/hooks/use-earshot-live-activity';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const WAVEFORM_WIDTH = SCREEN_WIDTH - Spacing.four * 2;
-const WAVEFORM_HEIGHT = 60;
+const WAVEFORM_WIDTH = SCREEN_WIDTH - 48;
+const WAVEFORM_HEIGHT = 72;
 
 export default function HomeScreen() {
+  useEarshotLiveActivity();
+
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastReason, setLastReason] = useState<'user' | 'route_lost' | null>(null);
-  const [level, setLevel] = useState(0);
+
+  // Audio level flows entirely on the UI thread — no React re-renders at 30Hz.
+  const audioLevel = useSharedValue(0);
 
   useEffect(() => {
     const stateSub = EarshotAudio.addListener('onStateChange', (e) => {
       setArmed(e.armed);
       setLastReason(e.reason ?? null);
-      if (!e.armed) setLevel(0);
+      if (!e.armed) audioLevel.value = 0;
     });
     const levelSub = EarshotAudio.addListener('onAudioLevel', (e) => {
-      setLevel(e.level);
+      audioLevel.value = e.level;
     });
     return () => {
       stateSub.remove();
       levelSub.remove();
     };
-  }, []);
+  }, [audioLevel]);
 
   const toggle = async () => {
     setError(null);
     try {
-      if (armed) {
-        await EarshotAudio.disarm();
-      } else {
-        await EarshotAudio.arm();
-      }
+      if (armed) await EarshotAudio.disarm();
+      else await EarshotAudio.arm();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const statusLine = armed
-    ? 'listening — drop the phone, walk away'
+  const status: StatusKind = armed
+    ? 'armed'
     : lastReason === 'route_lost'
-      ? 'stopped — AirPods disconnected'
-      : 'tap arm to start';
+      ? 'route_lost'
+      : 'idle';
 
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.topRow}>
+          <OutputPill armed={armed} />
           <RecordingIndicator visible={armed} />
         </View>
 
-        <View style={styles.center}>
-          <ArmButton armed={armed} disabled={Platform.OS !== 'ios'} onPress={toggle} />
-          <ThemedText type="code" style={styles.status}>
-            {statusLine}
-          </ThemedText>
+        <View style={styles.hero}>
+          <SonarRings armed={armed} />
+          <ArmButton
+            armed={armed}
+            disabled={Platform.OS !== 'ios'}
+            onPress={toggle}
+          />
+        </View>
+
+        <View style={styles.bottom}>
+          <StatusLine status={status} />
           <Waveform
-            level={level}
+            audioLevel={audioLevel}
             visible={armed}
             width={WAVEFORM_WIDTH}
             height={WAVEFORM_HEIGHT}
@@ -75,38 +87,47 @@ export default function HomeScreen() {
         </View>
 
         {error && (
-          <ThemedView type="backgroundElement" style={styles.errorBox}>
-            <ThemedText type="small">{error}</ThemedText>
-          </ThemedView>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
         )}
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1, paddingHorizontal: Spacing.four },
+  root: { flex: 1, backgroundColor: Earshot.bg },
+  safeArea: { flex: 1, paddingHorizontal: 24 },
   topRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    minHeight: 32,
   },
-  center: {
+  hero: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.four,
   },
-  status: {
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    opacity: 0.6,
-    letterSpacing: 2,
+  bottom: {
+    alignItems: 'center',
+    gap: 28,
+    paddingBottom: 40,
   },
   errorBox: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.four,
+    marginBottom: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  errorText: {
+    color: Earshot.textDim,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
